@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>線上光譜儀 (影像修復版)</title>
+    <title>線上光譜儀 (光纖獨立快門版)</title>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/regression/2.0.1/regression.min.js"></script>
     <style>
@@ -30,8 +30,6 @@
         #view-tab2 .chart-card { flex: 1 1 0; min-height: 0; display: flex; flex-direction: column; }
 
         .chart-card { background: #000; border-radius: 6px; border: 1px solid var(--border); padding: 10px; display: flex; flex-direction: column; box-shadow: 0 4px 15px rgba(0,0,0,0.8); flex-grow: 1; min-height: 0; }
-        .card-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; font-weight: bold; font-size: 14px; flex-wrap: wrap; gap: 5px; }
-        
         .spectrometer-ui-box { position: relative; width: 100%; display: flex; flex-direction: column; flex-shrink: 0; margin-bottom: 2px; }
         .projection-wrapper { position: relative; width: 100%; height: 38px; background: transparent; overflow: hidden; border-radius: 2px; }
         .proj-canvas { width: 100%; height: 100%; display: block; cursor: crosshair; touch-action: none; }
@@ -61,7 +59,7 @@
 <div class="tabs">
     <div class="tab active" onclick="switchTab(1)" id="tab-1">1. 光纖幾何與波長校正</div>
     <div class="tab" onclick="switchTab(2)" id="tab-2">2. 吸收光譜對照掃描</div>
-    <div class="version-badge">影像修復版 v24.0</div>
+    <div class="version-badge">雙態快門版 v25.0</div>
 </div>
 
 <video id="video-global" playsinline muted class="hidden"></video>
@@ -74,7 +72,7 @@
         <div class="top-section">
             <div class="control-panel">
                 <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px;">
-                    <button class="action-btn success" id="btn-cam-tab1" onclick="toggleCam('TAB1')">啟動攝影機</button>
+                    <button class="action-btn success btn-camera-toggle" id="btn-cam-tab1" onclick="toggleCam('TAB1')">啟動攝影機</button>
                     <button class="action-btn purple" onclick="document.getElementById('file-tab1').click()">📂 匯入檔案</button>
                 </div>
 
@@ -190,10 +188,9 @@
     // 圖表實例
     let chartMain = null; let chartRef = null; let chartSample = null;
     
-    // 獨立快門狀態機 (0: Off, 1: Live, 2: Frozen/File)
+    // 快門狀態機 (0: 停止/靜態, 1: Live視訊中) -> 雙態模式
     let stateTab1 = 0; let stateRef = 0; let stateSam = 0;
 
-    // 🌟 核心修復：資料儲存槽徹底解耦，建立專屬 offCanvas 防覆寫
     let dataTab1 = { intensities: [], colors: [], img: null, offCanvas: document.createElement('canvas') };
     let dataRef  = { intensities: [], colors: [], img: null, offCanvas: document.createElement('canvas') };
     let dataSam  = { intensities: [], colors: [], img: null, offCanvas: document.createElement('canvas') };
@@ -201,7 +198,7 @@
     let isAbsorbanceMode = false;
 
     // ==========================================
-    // 1. 三態快門狀態機與影像擷取核心
+    // 1. 雙態快門狀態機與影像擷取核心
     // ==========================================
     function startGlobalCamera() {
         if (isCameraGlobalActive) return;
@@ -221,33 +218,34 @@
 
     function updateCamBtnUI(btnId, state) {
         const btn = document.getElementById(btnId);
-        if(state === 0) { btn.innerText = "啟動攝影機"; btn.className = "action-btn success"; }
-        else if(state === 1) { btn.innerText = "📸 拍照定格"; btn.className = "action-btn warning"; }
-        else if(state === 2) { btn.innerText = "🛑 關閉影像"; btn.className = "action-btn gray"; }
+        if(state === 1) { 
+            btn.innerText = "📸 拍照定格"; 
+            btn.className = "action-btn warning btn-camera-toggle"; 
+        } else { 
+            btn.innerText = "啟動攝影機"; 
+            btn.className = "action-btn success btn-camera-toggle"; 
+        }
     }
 
+    // 核心優化：雙態邏輯 (啟動 <-> 拍照定格)
     function toggleCam(zone) {
         if(zone === 'TAB1') {
-            if(stateTab1 === 0) { startGlobalCamera(); stateTab1 = 1; dataTab1.img = null; }
-            else if(stateTab1 === 1) { stateTab1 = 2; freezeZone('TAB1'); }
-            else { stateTab1 = 0; dataTab1.intensities = []; dataTab1.img = null; }
+            if(stateTab1 === 1) { stateTab1 = 0; freezeZone('TAB1'); } // 拍照並切換回狀態0
+            else { startGlobalCamera(); stateTab1 = 1; dataTab1.img = null; } // 清空照片，啟動相機
             updateCamBtnUI('btn-cam-tab1', stateTab1);
         } else if(zone === 'REF') {
-            if(stateRef === 0) { startGlobalCamera(); stateRef = 1; dataRef.img = null; }
-            else if(stateRef === 1) { stateRef = 2; freezeZone('REF'); }
-            else { stateRef = 0; dataRef.intensities = []; dataRef.img = null; }
+            if(stateRef === 1) { stateRef = 0; freezeZone('REF'); }
+            else { startGlobalCamera(); stateRef = 1; dataRef.img = null; }
             updateCamBtnUI('btn-cam-ref', stateRef);
         } else if(zone === 'SAM') {
-            if(stateSam === 0) { startGlobalCamera(); stateSam = 1; dataSam.img = null; }
-            else if(stateSam === 1) { stateSam = 2; freezeZone('SAM'); }
-            else { stateSam = 0; dataSam.intensities = []; dataSam.img = null; }
+            if(stateSam === 1) { stateSam = 0; freezeZone('SAM'); }
+            else { startGlobalCamera(); stateSam = 1; dataSam.img = null; }
             updateCamBtnUI('btn-cam-sam', stateSam);
         }
         checkAndStopGlobalCamera();
         processFrame(); 
     }
 
-    // 🌟 核心修復：同步繪製擷取，防延遲丟圖
     function freezeZone(zone) {
         if (!canvasV.width) return;
         let snapCanvas = document.createElement('canvas');
@@ -266,9 +264,10 @@
         let img = new Image();
         img.onload = () => {
             canvasV.width = img.width; canvasV.height = img.height; 
-            if(zone === 'TAB1') { stateTab1 = 2; dataTab1.img = img; updateCamBtnUI('btn-cam-tab1', stateTab1); }
-            else if(zone === 'REF') { stateRef = 2; dataRef.img = img; updateCamBtnUI('btn-cam-ref', stateRef); }
-            else if(zone === 'SAM') { stateSam = 2; dataSam.img = img; updateCamBtnUI('btn-cam-sam', stateSam); }
+            // 匯入檔案視為靜態照片，按鈕回歸「啟動相機」狀態 (0)
+            if(zone === 'TAB1') { stateTab1 = 0; dataTab1.img = img; updateCamBtnUI('btn-cam-tab1', stateTab1); }
+            else if(zone === 'REF') { stateRef = 0; dataRef.img = img; updateCamBtnUI('btn-cam-ref', stateRef); }
+            else if(zone === 'SAM') { stateSam = 0; dataSam.img = img; updateCamBtnUI('btn-cam-sam', stateSam); }
             checkAndStopGlobalCamera();
             processFrame();
         };
@@ -328,34 +327,35 @@
         if(stateTab1 === 1 && isCameraGlobalActive) {
             let ext = extractSpectrumData(video, dataTab1.offCanvas);
             if(ext) { dataTab1.intensities = ext.intensities; dataTab1.colors = ext.colors; }
-        } else if(stateTab1 === 2 && dataTab1.img) {
+        } else if(stateTab1 === 0 && dataTab1.img) {
             let ext = extractSpectrumData(dataTab1.img, dataTab1.offCanvas);
             if(ext) { dataTab1.intensities = ext.intensities; dataTab1.colors = ext.colors; }
-        } else if(stateTab1 === 0) { dataTab1.intensities = []; dataTab1.colors = []; }
+        } else if(stateTab1 === 0 && !dataTab1.img) { dataTab1.intensities = []; dataTab1.colors = []; }
         
         if(stateRef === 1 && isCameraGlobalActive) {
             let ext = extractSpectrumData(video, dataRef.offCanvas);
             if(ext) { dataRef.intensities = ext.intensities; dataRef.colors = ext.colors; }
-        } else if(stateRef === 2 && dataRef.img) {
+        } else if(stateRef === 0 && dataRef.img) {
             let ext = extractSpectrumData(dataRef.img, dataRef.offCanvas);
             if(ext) { dataRef.intensities = ext.intensities; dataRef.colors = ext.colors; }
-        } else if(stateRef === 0) { dataRef.intensities = []; dataRef.colors = []; }
+        } else if(stateRef === 0 && !dataRef.img) { dataRef.intensities = []; dataRef.colors = []; }
 
         if(stateSam === 1 && isCameraGlobalActive) {
             let ext = extractSpectrumData(video, dataSam.offCanvas);
             if(ext) { dataSam.intensities = ext.intensities; dataSam.colors = ext.colors; }
-        } else if(stateSam === 2 && dataSam.img) {
+        } else if(stateSam === 0 && dataSam.img) {
             let ext = extractSpectrumData(dataSam.img, dataSam.offCanvas);
             if(ext) { dataSam.intensities = ext.intensities; dataSam.colors = ext.colors; }
-        } else if(stateSam === 0) { dataSam.intensities = []; dataSam.colors = []; }
+        } else if(stateSam === 0 && !dataSam.img) { dataSam.intensities = []; dataSam.colors = []; }
 
         // UI 渲染分發
         if (currentTab === 1) {
             ctxV.clearRect(0, 0, canvasV.width, canvasV.height);
             if(stateTab1 === 1) ctxV.drawImage(video, 0, 0, canvasV.width, canvasV.height);
-            else if(stateTab1 === 2 && dataTab1.img) ctxV.drawImage(dataTab1.img, 0, 0, canvasV.width, canvasV.height);
+            else if(stateTab1 === 0 && dataTab1.img) ctxV.drawImage(dataTab1.img, 0, 0, canvasV.width, canvasV.height);
 
-            if(stateTab1 !== 0) {
+            // 有照片或視訊時畫幾何框
+            if(stateTab1 === 1 || dataTab1.img) {
                 let rw = Math.max(1, roiXWPer * canvasV.width); let rh = Math.max(1, roiH);
                 let cx = roiCXPer * canvasV.width; let cy = roiCYPer * canvasV.height;
                 let angleRad = -roiAngle * Math.PI / 180;
@@ -431,7 +431,7 @@
 
     // 視訊拖曳 (Tab1)
     canvasV.addEventListener('pointerdown', (e) => {
-        if (!canvasV.width || isCalibrating || currentTab !== 1 || stateTab1 === 0) return; 
+        if (!canvasV.width || isCalibrating || currentTab !== 1 || (!dataTab1.img && stateTab1 === 0)) return; 
         canvasV.setPointerCapture(e.pointerId);
         const rect = canvasV.getBoundingClientRect();
         const mouseX = (e.clientX - rect.left) * (canvasV.width / rect.width);
@@ -531,7 +531,6 @@
         ctx.beginPath(); ctx.arc(lx, ly, RADIUS, 0, Math.PI * 2);
         ctx.lineWidth = 2.5; ctx.strokeStyle = '#fff'; ctx.stroke(); ctx.clip();
 
-        const xAxis = chartInstance.scales.x;
         for (let i = -RADIUS; i <= RADIUS; i++) {
             let pixelX = lx + i;
             let absRatio = getAbsoluteCameraRatioFromPixel(pixelX, chartInstance);
@@ -721,8 +720,7 @@
     // ==========================================
     function saveReference() {
         if (!dataRef.intensities.length) { alert("請先啟動攝影機或匯入檔案，取得基準影像！"); return; }
-        // 強制定格
-        if (stateRef === 1) toggleCam('REF');
+        if (stateRef === 1) toggleCam('REF'); // 強制凍結
         alert("✅ 基準光源 I₀ 儲存成功！");
     }
 
