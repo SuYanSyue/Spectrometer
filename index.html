@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>線上光譜儀 (完全體版)</title>
+    <title>線上光譜儀 (完全體版 v38.0)</title>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-annotation@3.0.1/dist/chartjs-plugin-annotation.min.js"></script>
     <style>
@@ -66,7 +66,7 @@
 <div class="tabs">
     <div class="tab active" onclick="switchTab(1)" id="tab-1">1. 光纖幾何與波長校正</div>
     <div class="tab" onclick="switchTab(2)" id="tab-2">2. 吸收光譜對照掃描</div>
-    <div class="version-badge">完全體版 v37.0</div>
+    <div class="version-badge">完全體版 v38.0</div>
 </div>
 
 <video id="video-global" playsinline muted class="hidden"></video>
@@ -137,7 +137,7 @@
                 </div>
 
                 <div style="display:flex; gap:8px; margin-top: auto; height: 38px; align-items: stretch;">
-                    <button class="action-btn" id="btn-calib-action" style="flex:1; font-size: 14px;" onclick="startPeakCalibration()">📍 開始標定特徵波長</button>
+                    <button class="action-btn" id="btn-calib-action" style="flex:1; font-size: 14px;" onclick="startPeakCalibration()">📍 重新標定</button>
                     <div id="calib-status-txt" class="calib-status" style="flex:1; display:flex; align-items:center; justify-content:center; margin:0;">未校正</div>
                 </div>
             </div>
@@ -226,7 +226,7 @@
     let isAutoPeakSnapEnabled = true;
     let isRadarEnabled = false;
     let peakThresholdRatio = 0.15; 
-    let peakWindowRatio = 0.020; // 掃描寬度預設 2.0%
+    let peakWindowRatio = 0.020; 
 
     let isSmoothingEnabled = true;
     let isDarkSubEnabled = false;
@@ -703,7 +703,8 @@
         let finalCameraRatio = clickedCameraRatio;
         if (isAutoPeakSnapEnabled) finalCameraRatio = snapToNearestPeak(clickedCameraRatio);
         
-        let targetWl = (calibStep === 1) ? 452 : (calibStep === 2) ? 533 : 611;
+        // 🌟 修正的絕對物理常數
+        let targetWl = (calibStep === 1) ? 435.8 : (calibStep === 2) ? 546.1 : 611.6;
         calibPoints.push([finalCameraRatio, targetWl]);
 
         if (calibStep === 1) stepRatioCache.blue = finalCameraRatio;
@@ -713,7 +714,10 @@
         forceReinitChart();
 
         if (calibStep < 3) {
-            calibStep++; document.getElementById('calib-status-txt').innerHTML = `請標定下一特徵波峰`; document.getElementById('calib-status-txt').style.color = '#f1c40f';
+            calibStep++; 
+            let msg = (calibStep === 2) ? "請標定 546.1nm (綠)" : "請標定 611.6nm (紅)";
+            let color = (calibStep === 2) ? "#2ecc71" : "#e74c3c";
+            document.getElementById('calib-status-txt').innerHTML = msg; document.getElementById('calib-status-txt').style.color = color;
             processFrame();
         } else {
             isCalibrating = false; lockROIControls(false);
@@ -736,7 +740,7 @@
         if (stateTab1 === 1) toggleCam('TAB1'); 
         lockROIControls(true); calibStep = 1; calibPoints = []; isCalibrated = false; isCalibrating = true;
         stepRatioCache = { blue: null, green: null, red: null }; wavelengthFormula = (r) => 400 + r * 300; 
-        document.getElementById('calib-status-txt').innerHTML = `請標定 452nm (藍)`; document.getElementById('calib-status-txt').style.color = '#3498db';
+        document.getElementById('calib-status-txt').innerHTML = `請標定 435.8nm (藍)`; document.getElementById('calib-status-txt').style.color = '#3498db';
         forceReinitChart(); processFrame();
     }
 
@@ -773,7 +777,6 @@
         if (isLoupeActive && targetCanvas.id === 'canvasProjMain') drawProjectionLoupe(ctx, targetCanvas, targetChart, sourceCanvas, sourceColors);
     }
 
-    // 🌟 導入動態掃描寬度 (峰值解析度控制)
     function updateChartData(targetChart, intensities, referenceForAbsorbance = null) {
         if (!targetChart) return;
         if (intensities.length === 0) {
@@ -825,7 +828,6 @@
             let maxY = Math.max(...finalChartData.map(d => d.y));
             let absThreshold = maxY * peakThresholdRatio; 
             
-            // 💡 動態掃描寬度：透過拉桿決定解析相近雙峰的能力
             let windowSize = Math.max(1, Math.floor(srcLen * peakWindowRatio)); 
 
             let peakCount = 0;
@@ -888,9 +890,10 @@
                 ctx.fillStyle = color; ctx.font = "10px sans-serif";
                 ctx.fillText(`${name} (${wl})`, targetX + 4, top - 6); ctx.restore();
             };
-            drawLine(stepRatioCache.blue, 452, '#3498db', '汞藍');
-            drawLine(stepRatioCache.green, 533, '#2ecc71', '汞綠');
-            drawLine(stepRatioCache.red, 611, '#e74c3c', '銪紅');
+            // 🌟 精確物理常數修正
+            drawLine(stepRatioCache.blue, 435.8, '#3498db', '汞藍');
+            drawLine(stepRatioCache.green, 546.1, '#2ecc71', '汞綠');
+            drawLine(stepRatioCache.red, 611.6, '#e74c3c', '銪紅');
         }
     };
 
