@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>線上光譜儀 (萬用高解析完全體版 v45.0)</title>
+    <title>線上光譜儀 (高相容完全體版 v46.0)</title>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-annotation@3.0.1/dist/chartjs-plugin-annotation.min.js"></script>
     <style>
@@ -66,7 +66,7 @@
 <div class="tabs">
     <div class="tab active" onclick="switchTab(1)" id="tab-1">1. 光纖幾何與波長校正</div>
     <div class="tab" onclick="switchTab(2)" id="tab-2">2. 吸收光譜對照掃描</div>
-    <div class="version-badge">萬用完全體版 v45.0</div>
+    <div class="version-badge">高相容完全體版 v46.0</div>
 </div>
 
 <video id="video-global" playsinline muted class="hidden"></video>
@@ -370,36 +370,40 @@
         btn.innerText = "擷取中...請遮光"; btn.className = "action-btn warning";
     }
 
-    function startGlobalCamera() {
+    // 🌟 終極高相容性相機引擎 (瀑布流降級策略)
+    async function startGlobalCamera() {
         if (isCameraGlobalActive) return;
-        
-        const constraints = {
-            video: {
-                width: { ideal: 3840 },
-                height: { ideal: 2160 }
-            }
-        };
 
-        navigator.mediaDevices.getUserMedia(constraints)
-        .then(stream => {
-            video.srcObject = stream; 
-            video.play(); 
-            isCameraGlobalActive = true;
-            video.onloadedmetadata = () => { 
-                canvasV.width = video.videoWidth; 
-                canvasV.height = video.videoHeight; 
-                console.log(`相機連結成功，當前解析度: ${video.videoWidth} x ${video.videoHeight}`);
-                startRenderLoop(); 
-            };
-        })
-        .catch(err => {
-            console.error("最大化解析度請求不被硬體支援，切換至標準模式:", err);
-            navigator.mediaDevices.getUserMedia({ video: true })
-            .then(stream => {
-                video.srcObject = stream; video.play(); isCameraGlobalActive = true;
-                video.onloadedmetadata = () => { canvasV.width = video.videoWidth; canvasV.height = video.videoHeight; startRenderLoop(); };
-            }).catch(e => alert("設備啟動失敗: " + e));
-        });
+        const resolutions = [
+            { width: { ideal: 3840 }, height: { ideal: 2160 } }, 
+            { width: { ideal: 1920 }, height: { ideal: 1080 } }, 
+            { width: { ideal: 1280 }, height: { ideal: 720 } },  
+            true                                                 
+        ];
+
+        for (let i = 0; i < resolutions.length; i++) {
+            try {
+                const constraints = { video: resolutions[i] };
+                const stream = await navigator.mediaDevices.getUserMedia(constraints);
+                
+                video.srcObject = stream;
+                await video.play();
+                isCameraGlobalActive = true;
+                
+                video.onloadedmetadata = () => {
+                    canvasV.width = video.videoWidth;
+                    canvasV.height = video.videoHeight;
+                    console.log(`✅ 相機連線成功 (觸發策略 ${i + 1})！真實解析度: ${video.videoWidth} x ${video.videoHeight}`);
+                    startRenderLoop();
+                };
+                return; 
+
+            } catch (err) {
+                console.warn(`⚠️ 相機策略 ${i + 1} 被 Mac/驅動程式拒絕，準備嘗試降級...`, err.name);
+            }
+        }
+        
+        alert("相機啟動徹底失敗！請確認：\n1. 攝影機 USB 已插妥\n2. Mac 的「隱私權與安全性」已允許瀏覽器存取相機\n3. 沒有其他程式正在佔用該攝影機");
     }
 
     function checkAndStopGlobalCamera() {
@@ -769,7 +773,6 @@
                 wavelengthFormula = (r) => coeffs[0]*r*r + coeffs[1]*r + coeffs[2];
                 document.getElementById('calib-status-txt').innerHTML = `✅ 絕對對齊`; document.getElementById('calib-status-txt').style.color = '#2ecc71';
             } else {
-                // 💡 修正安全退化：當點位無法組成拋物線時，自動手動線性擬合，免除外部庫未安裝的地雷
                 let r0 = calibPoints[0][0], w0 = calibPoints[0][1];
                 let r2 = calibPoints[2][0], w2 = calibPoints[2][1];
                 let slope = (w2 - w0) / (r2 - r0 || 1);
@@ -966,7 +969,7 @@
                 }
                 ctx.save(); ctx.strokeStyle = color; ctx.lineWidth = 1.5; ctx.setLineDash([4, 4]);
                 ctx.beginPath(); ctx.moveTo(targetX, top); ctx.lineTo(targetX, bottom); 
-                ctx.stroke(); // 🌟 這裡完美修復：補回遺失的物件導向呼叫 ctx.
+                ctx.stroke(); 
                 ctx.fillStyle = color; ctx.font = "10px sans-serif";
                 ctx.fillText(`${name} (${wl})`, targetX + 4, top - 6); ctx.restore();
             };
